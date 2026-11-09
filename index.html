@@ -37,3 +37,137 @@ input{width:100%;border:1.5px solid var(--line);background:var(--soft);border-ra
 <div class="hero"><div class="mbar"><button class="arrow" id="prev" aria-label="Previous month">‹</button><b id="mt"></b><button class="arrow" id="next" aria-label="Next month">›</button></div>
 <div class="lbl">Payable</div><div class="big" id="pay">₹0</div><div class="chips"><span id="rc"></span><span id="mc"></span></div></div>
 <div class="card"><div class="wk"><div>M</div><div>T</div><div>W</div><div>T</div><div>F</div><div>S</div><div>S</div></div><div class="days" id="days"></div></div>
+<div class="card"><h3>Missed meals</h3><div id="missed"></div></div>
+</section>
+<section id="v-set" class="view" hidden>
+<h1>Settings</h1>
+<div class="card" style="margin-top:0"><h3>Bill details</h3>
+<div class="f"><label for="pname">Your name</label><input id="pname" placeholder="Shown on bill" autocomplete="name"></div>
+<div class="f" style="margin:0"><label for="pshop">Tiffin provider (optional)</label><input id="pshop" placeholder="Shown as bill title"></div></div>
+<div class="card"><h3>Prices</h3><div class="g3">
+<div class="f"><label for="p-morning">Morning ₹</label><input id="p-morning" type="number" min="0" step="0.01" inputmode="decimal"></div>
+<div class="f"><label for="p-evening">Evening ₹</label><input id="p-evening" type="number" min="0" step="0.01" inputmode="decimal"></div>
+<div class="f"><label for="p-night">Night ₹</label><input id="p-night" type="number" min="0" step="0.01" inputmode="decimal"></div></div></div>
+<div class="card"><h3>Download bill (PDF)</h3>
+<div class="seg" id="btype"><button data-t="day" class="on">Day</button><button data-t="week">Week</button><button data-t="range">1–15</button><button data-t="month">Month</button></div>
+<div class="f" id="fd"><input id="bd" type="date" aria-label="Date"></div>
+<div class="f" id="fr" hidden><div class="row2"><input id="b1" type="date" aria-label="From date"><input id="b2" type="date" aria-label="To date"></div><div class="row2" style="margin-top:10px"><button class="btn" id="q1" type="button">1 – 15</button><button class="btn" id="q2" type="button">16 – end</button></div></div>
+<div class="f" id="fm" hidden><input id="bm" type="month" aria-label="Month"></div>
+<p class="hint" id="bh"></p>
+<button class="btn primary" id="dl">Download PDF</button></div>
+<div class="card"><h3>Backup</h3><div class="row2"><button class="btn" id="exp">Save backup</button><button class="btn" id="imp">Restore</button></div><input id="impf" type="file" accept="application/json,.json" hidden></div>
+</section>
+<nav class="nav"><button data-v="home" class="on"><i>📅</i>Tiffin</button><button data-v="set"><i>⚙️</i>Settings</button></nav>
+<div class="sheet" id="sheet"><div class="scrim" id="scrim"></div><div class="sp" role="dialog" aria-modal="true"><div class="grab"></div><h2 id="st"></h2><div id="meals"></div><div class="tot"><span>Day total</span><b id="dt"></b></div><div class="row2"><button class="btn" id="clr">Clear day</button><button class="btn primary" id="done">Done</button></div></div></div>
+<div id="toast" role="status"></div>
+</main><script>
+(function(){'use strict';
+var KEY='tiffintrack_v3',N=['morning','evening','night'],L={morning:'Morning',evening:'Evening',night:'Night'},I={morning:'🌅',evening:'🌇',night:'🌙'};
+var $=function(i){return document.getElementById(i)},p2=function(n){return String(n).padStart(2,'0')};
+var kOf=function(d){return d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate())},dOf=function(k){return new Date(k+'T12:00:00')};
+var fd=function(k,o){return dOf(k).toLocaleDateString('en-IN',o)};
+var now=new Date(),y=now.getFullYear(),m=now.getMonth(),sel=kOf(now),btype='day',data=load(),timer;
+function load(){var o=null;try{o=JSON.parse(localStorage.getItem(KEY))}catch(e){}if(!o||typeof o!=='object')o={};o.prices=Object.assign({morning:50,evening:50,night:50},o.prices);o.records=o.records||{};o.profile=Object.assign({name:'',shop:''},o.profile);return o}
+function persist(){try{localStorage.setItem(KEY,JSON.stringify(data));return true}catch(e){toast('Could not save — storage blocked');return false}}
+function money(n){return '₹'+Number(n).toLocaleString('en-IN',{maximumFractionDigits:2})}
+function pr(n){return Math.max(0,Number(data.prices[n])||0)}
+function rec(k){return data.records[k]||{}}
+function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
+function toast(t){var e=$('toast');e.textContent=t;e.classList.add('show');clearTimeout(e._t);e._t=setTimeout(function(){e.classList.remove('show')},2000)}
+function scan(s,e){var rows=[],t={yes:0,no:0,pay:0,q:{morning:0,evening:0,night:0}};for(var d=dOf(s),end=dOf(e);d<=end;d.setDate(d.getDate()+1)){var k=kOf(d),r=rec(k);N.forEach(function(n){if(r[n]==='yes'||r[n]==='no'){rows.push({k:k,n:n,st:r[n],note:(r.notes&&r.notes[n])||''});if(r[n]==='yes'){t.yes++;t.pay+=pr(n);t.q[n]++}else t.no++}})}return{rows:rows,t:t}}
+function tidy(k){var r=data.records[k];if(!r)return;if(!N.some(function(n){return r[n]==='yes'||r[n]==='no'}))delete data.records[k];else if(r.notes){N.forEach(function(n){if(!r.notes[n]||!r[n])delete r.notes[n]});if(!Object.keys(r.notes).length)delete r.notes}}
+/* ---------- Home ---------- */
+function renderHome(){
+var first=(new Date(y,m,1).getDay()+6)%7,cnt=new Date(y,m+1,0).getDate(),tk=kOf(now),box=$('days');box.replaceChildren();
+$('mt').textContent=new Date(y,m,1).toLocaleDateString('en-IN',{month:'long',year:'numeric'});
+for(var i=0;i<first;i++)box.append(el('div'));
+for(var d=1;d<=cnt;d++){(function(d){var k=y+'-'+p2(m+1)+'-'+p2(d),r=rec(k),b=el('button','day'+(k===tk?' today':'')+(k===sel?' sel':''));b.type='button';b.setAttribute('aria-label',k);b.append(el('span',null,d));var dots=el('span','dots');N.forEach(function(n){dots.append(el('i','dot'+(r[n]==='yes'?' y':r[n]==='no'?' n':'')))});b.append(dots);b.onclick=function(){openSheet(k)};box.append(b)})(d)}
+var res=scan(y+'-'+p2(m+1)+'-01',y+'-'+p2(m+1)+'-'+p2(cnt));
+$('pay').textContent=money(res.t.pay);$('rc').textContent='✓ '+res.t.yes+' received';$('mc').textContent='✕ '+res.t.no+' missed';
+var h=$('missed');h.replaceChildren();var ms=res.rows.filter(function(r){return r.st==='no'});
+if(!ms.length)h.append(el('div','empty','No missed meals 🎉'));
+ms.forEach(function(r){var b=el('button','mi');b.type='button';var l=el('span');l.append(document.createTextNode(fd(r.k,{day:'numeric',month:'short'})+' · '+L[r.n]));if(r.note)l.append(el('small',null,r.note));b.append(l,el('span',null,'−'+money(pr(r.n))));b.onclick=function(){openSheet(r.k)};h.append(b)})}
+function move(o){m+=o;if(m<0){m=11;y--}if(m>11){m=0;y++}renderHome()}
+$('prev').onclick=function(){move(-1)};$('next').onclick=function(){move(1)};
+/* ---------- Day sheet ---------- */
+function openSheet(k){sel=k;renderSheet();renderHome();$('sheet').classList.add('open')}
+function closeSheet(){flush();$('sheet').classList.remove('open')}
+function flush(){clearTimeout(timer);persist();renderHome()}
+function renderSheet(){
+$('st').textContent=fd(sel,{weekday:'long',day:'numeric',month:'long'});var r=rec(sel),h=$('meals'),tot=0;h.replaceChildren();
+N.forEach(function(n){var st=r[n]||'',box=el('div','meal'),top=el('div','mt'),info=el('div'),ch=el('div','ch');
+info.append(el('b',null,I[n]+' '+L[n]),el('small',null,money(pr(n))));
+[['yes','Yes','y'],['no','No','n'],['','—','u']].forEach(function(o){var b=el('button',st===o[0]?o[2]:'',o[1]);b.type='button';b.setAttribute('aria-pressed',String(st===o[0]));b.onclick=function(){setStatus(n,o[0])};ch.append(b)});
+top.append(info,ch);box.append(top);
+if(st){var inp=el('input');inp.type='text';inp.maxLength=120;inp.placeholder=st==='no'?'Why missed? (optional)':'Remark (optional)';inp.value=(r.notes&&r.notes[n])||'';inp.oninput=function(){setNote(n,inp.value)};box.append(inp)}
+if(st==='yes')tot+=pr(n);h.append(box)});
+$('dt').textContent=money(tot)}
+function setStatus(n,v){var r=data.records[sel]||(data.records[sel]={});if(v)r[n]=v;else{delete r[n];if(r.notes)delete r.notes[n]}tidy(sel);persist();renderSheet();renderHome()}
+function setNote(n,v){var r=data.records[sel];if(!r)return;r.notes=r.notes||{};if(v.trim())r.notes[n]=v;else delete r.notes[n];clearTimeout(timer);timer=setTimeout(flush,400)}
+$('clr').onclick=function(){if(!data.records[sel])return;delete data.records[sel];persist();renderSheet();renderHome();toast('Day cleared')};
+$('done').onclick=closeSheet;$('scrim').onclick=closeSheet;
+document.addEventListener('keydown',function(e){if(e.key==='Escape')closeSheet()});
+/* ---------- Tabs ---------- */
+document.querySelectorAll('.nav button').forEach(function(b){b.onclick=function(){var v=b.dataset.v;document.querySelectorAll('.nav button').forEach(function(x){x.classList.toggle('on',x===b)});$('v-home').hidden=v!=='home';$('v-set').hidden=v!=='set';window.scrollTo(0,0);if(v==='set')fillSettings()}});
+/* ---------- Settings ---------- */
+function fillSettings(){$('pname').value=data.profile.name;$('pshop').value=data.profile.shop;N.forEach(function(n){$('p-'+n).value=data.prices[n]});$('bd').value=sel;$('bm').value=y+'-'+p2(m+1);quick(1,15)}
+$('pname').oninput=function(){data.profile.name=this.value.slice(0,60);persist()};
+$('pshop').oninput=function(){data.profile.shop=this.value.slice(0,60);persist()};
+N.forEach(function(n){$('p-'+n).onchange=function(){var v=this.value;if(v.trim()===''||!isFinite(Number(v))||Number(v)<0){this.value=data.prices[n];toast('Enter a valid price');return}data.prices[n]=Number(v);persist();renderHome();toast('Price saved')}});
+document.querySelectorAll('#btype button').forEach(function(b){b.onclick=function(){btype=b.dataset.t;document.querySelectorAll('#btype button').forEach(function(x){x.classList.toggle('on',x===b)});$('fd').hidden=btype==='month'||btype==='range';$('fr').hidden=btype!=='range';$('fm').hidden=btype!=='month';hint()}});
+$('bd').onchange=hint;$('bm').onchange=hint;$('b1').onchange=hint;$('b2').onchange=hint;
+function quick(a,b){var base=y+'-'+p2(m+1)+'-';$('b1').value=base+p2(a);$('b2').value=base+p2(b||new Date(y,m+1,0).getDate());hint()}
+$('q1').onclick=function(){quick(1,15)};$('q2').onclick=function(){quick(16)};
+function range(){var s,e;if(btype==='range'){s=$('b1').value;e=$('b2').value;if(!s||!e)return null;if(s>e){var t=s;s=e;e=t}return[s,e]}if(btype==='month'){var v=$('bm').value;if(!/^\d{4}-\d{2}$/.test(v))return null;var yy=+v.slice(0,4),mm=+v.slice(5);s=v+'-01';e=kOf(new Date(yy,mm,0))}else{var v2=$('bd').value;if(!v2)return null;if(btype==='day')s=e=v2;else{var d=dOf(v2);d.setDate(d.getDate()-(d.getDay()+6)%7);s=kOf(d);d.setDate(d.getDate()+6);e=kOf(d)}}return[s,e]}
+function hint(){var r=range();$('bh').textContent=r?(btype==='week'||btype==='range'?fd(r[0],{day:'numeric',month:'short'})+' – '+fd(r[1],{day:'numeric',month:'short',year:'numeric'})+(btype==='week'?' (Mon–Sun)':''):''):''}
+$('dl').onclick=function(){var r=range();if(!r){toast('Pick a date');return}try{var pdf=makePDF(bill(btype,r[0],r[1]));save(pdf,'TiffinTrack-'+btype+'-bill-'+r[0]+'.pdf','application/pdf');toast('Bill downloaded')}catch(e){toast('Could not create PDF')}};
+function save(bytes,name,type){var u=URL.createObjectURL(new Blob([bytes],{type:type})),a=document.createElement('a');a.href=u;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(u)},1500)}
+$('exp').onclick=function(){save(JSON.stringify(data,null,2),'tiffintrack-backup-'+kOf(new Date())+'.json','application/json')};
+$('imp').onclick=function(){$('impf').click()};
+$('impf').onchange=function(ev){var f=ev.target.files[0];if(!f)return;f.text().then(function(t){var o=JSON.parse(t);if(!o||!o.prices||!o.records||typeof o.records!=='object')throw Error('Invalid backup');if(!confirm('Replace all current data with this backup?'))return;var c={prices:{},records:{},profile:Object.assign({name:'',shop:''},o.profile)};N.forEach(function(n){var p=Number(o.prices[n]);c.prices[n]=isFinite(p)&&p>=0?p:0});Object.keys(o.records).forEach(function(k){var r=o.records[k];if(!/^\d{4}-\d{2}-\d{2}$/.test(k)||!r||typeof r!=='object')return;var it={},nt={};N.forEach(function(n){if(r[n]==='yes'||r[n]==='no'){it[n]=r[n];var s=r.notes&&r.notes[n];if(typeof s==='string'&&s.trim())nt[n]=s.slice(0,120)}});if(Object.keys(it).length){if(Object.keys(nt).length)it.notes=nt;c.records[k]=it}});data=c;persist();renderHome();fillSettings();toast('Backup restored')}).catch(function(e){toast('Restore failed: '+e.message)}).finally(function(){ev.target.value=''})};
+/* ---------- Bill (canvas pages -> PDF, fully offline) ---------- */
+var W=1240,H=1754,M=70,F='Inter,"Segoe UI",Roboto,"Noto Sans","Noto Sans Devanagari",Arial,sans-serif';
+function bill(type,s,e){
+var sc=scan(s,e),pages=[],c,x,y;
+function T(t,px,py,font,col,al){x.font=font+' '+F;x.fillStyle=col;x.textAlign=al||'left';x.fillText(t,px,py)}
+function RR(px,py,w,h,r,col){x.fillStyle=col;x.beginPath();if(x.roundRect)x.roundRect(px,py,w,h,r);else x.rect(px,py,w,h);x.fill()}
+function grad(x0,x1){var g=x.createLinearGradient(x0,0,x1,0);g.addColorStop(0,'#0f9b7a');g.addColorStop(1,'#1d6fa5');return g}
+var period=type==='month'?dOf(s).toLocaleDateString('en-IN',{month:'long',year:'numeric'}):(type==='week'||type==='range')?fd(s,{day:'numeric',month:'short'})+' – '+fd(e,{day:'numeric',month:'short',year:'numeric'}):fd(s,{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+var title={day:'Daily',week:'Weekly',range:'Period',month:'Monthly'}[type]+' Bill';
+function wrap(t,mw){x.font='400 22px '+F;var out=[],line='';t.split(/\s+/).forEach(function(w){var tr=line?line+' '+w:w;if(x.measureText(tr).width<=mw||!line)line=tr;else{out.push(line);line=w}});if(line)out.push(line);var a=out[0]||'',b=out.slice(1).join(' ');function cut(s){if(x.measureText(s).width<=mw)return s;while(s.length>1&&x.measureText(s+'…').width>mw)s=s.slice(0,-1);return s+'…'}return b?[cut(a),cut(b)]:[cut(a)]}
+function head(){RR(M,y,W-2*M,56,14,'#eef3f9');var cy=y+37,f='700 20px';T('DATE',M+24,cy,f,'#5b6b82');T('MEAL',M+250,cy,f,'#5b6b82');T('STATUS',M+410,cy,f,'#5b6b82');T('REMARK',M+590,cy,f,'#5b6b82');T('AMOUNT',W-M-24,cy,f,'#5b6b82','right');y+=64}
+function page(first){c=document.createElement('canvas');c.width=W;c.height=H;x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,W,H);pages.push(c);var bh=first?250:120;x.fillStyle=grad(0,W);x.fillRect(0,0,W,bh);
+T('🍱 '+(data.profile.shop||'TiffinTrack'),M,first?100:76,'800 '+(first?54:40)+'px','#fff');T(title.toUpperCase(),W-M,first?100:76,'700 26px','#ffffffcc','right');y=bh+40;
+if(first){T(period,M,160,'500 30px','#ffffffe6');if(data.profile.name)T('Billed to: '+data.profile.name,M,206,'500 26px','#ffffffbb');T('Generated '+fd(kOf(new Date()),{day:'numeric',month:'short',year:'numeric'}),W-M,160,'500 24px','#ffffffbb','right');
+var cw=(W-2*M-40)/3,cards=[['Received meals',String(sc.t.yes),'#0b7a5a','#e3f6ee'],['Missed meals',String(sc.t.no),'#c0392b','#fdeaea'],['Total payable',money(sc.t.pay),'#fff',null]];
+cards.forEach(function(k,i){var cx=M+i*(cw+20);RR(cx,y,cw,120,22,k[3]||grad(cx,cx+cw));T(k[0],cx+26,y+38,'600 21px',k[3]?'#5b6b82':'#ffffffcc');T(k[1],cx+26,y+92,'800 44px',k[2])});y+=164}
+head()}
+page(true);
+if(!sc.rows.length){T('No meals recorded for this period',W/2,y+80,'500 26px','#8a99ae','center');y+=160}
+sc.rows.forEach(function(r){var lines=r.note?wrap(r.note,316):[],rh=lines.length>1?88:68;if(y+rh>H-120){page(false)}var mid=y+rh/2,yes=r.st==='yes';
+T(fd(r.k,{weekday:'short',day:'numeric',month:'short'}),M+24,mid+9,'600 26px','#0f1b2d');
+x.fillStyle=r.n==='morning'?'#f5a623':r.n==='evening'?'#e8743b':'#5b6cd6';x.beginPath();x.arc(M+258,mid,8,0,7);x.fill();T(L[r.n],M+280,mid+9,'500 25px','#33445c');
+RR(M+410,mid-20,150,40,20,yes?'#e3f6ee':'#fdeaea');T(yes?'Received':'Missed',M+485,mid+8,'700 21px',yes?'#0b7a5a':'#c0392b','center');
+lines.forEach(function(l,i){T(l,M+590,mid+8-(lines.length-1)*14+i*28,'400 22px','#5b6b82')});
+if(yes)T(money(pr(r.n)),W-M-24,mid+9,'700 27px','#0f1b2d','right');else T('Not charged',W-M-24,mid+8,'500 21px','#9aa8bb','right');
+x.fillStyle='#e9eef5';x.fillRect(M,y+rh-1,W-2*M,2);y+=rh});
+if(y+540>H-110)page(false);
+y+=30;T('Bill summary',M,y+30,'800 32px','#0f1b2d');y+=56;RR(M,y,W-2*M,56,14,'#eef3f9');var cy=y+37,f='700 20px';T('MEAL',M+24,cy,f,'#5b6b82');T('QTY',M+560,cy,f,'#5b6b82','right');T('RATE',M+800,cy,f,'#5b6b82','right');T('AMOUNT',W-M-24,cy,f,'#5b6b82','right');y+=64;
+N.forEach(function(n){var q=sc.t.q[n];T(L[n],M+24,y+42,'500 26px','#0f1b2d');T(String(q),M+560,y+42,'500 26px','#33445c','right');T(money(pr(n)),M+800,y+42,'500 26px','#33445c','right');T(money(q*pr(n)),W-M-24,y+42,'700 26px','#0f1b2d','right');x.fillStyle='#e9eef5';x.fillRect(M,y+63,W-2*M,2);y+=66});
+y+=24;RR(M,y,W-2*M,130,26,grad(M,W-M));T('Total payable',M+36,y+78,'700 32px','#fff');T(money(sc.t.pay),W-M-36,y+88,'800 62px','#fff','right');
+T(sc.t.yes+' meals received · '+sc.t.no+' missed (not charged)',M,y+180,'400 22px','#6b7a90');
+pages.forEach(function(p,i){var g=p.getContext('2d');g.fillStyle='#e9eef5';g.fillRect(M,H-90,W-2*M,2);g.font='400 21px '+F;g.fillStyle='#8a99ae';g.textAlign='left';g.fillText('TiffinTrack',M,H-48);g.textAlign='right';g.fillText('Page '+(i+1)+' of '+pages.length,W-M,H-48)});
+return pages}
+function makePDF(pages){var enc=new TextEncoder(),parts=[],len=0,offs=[];function push(v){var u=typeof v==='string'?enc.encode(v):v;parts.push(u);len+=u.length}
+var n=pages.length,kids=pages.map(function(_,i){return(3+3*i)+' 0 R'}).join(' ');
+push('%PDF-1.4\n');offs[1]=len;push('1 0 obj\n<</Type/Catalog/Pages 2 0 R>>\nendobj\n');offs[2]=len;push('2 0 obj\n<</Type/Pages/Kids['+kids+']/Count '+n+'>>\nendobj\n');
+pages.forEach(function(c,i){var b=atob(c.toDataURL('image/jpeg',.9).split(',')[1]),u=new Uint8Array(b.length);for(var j=0;j<b.length;j++)u[j]=b.charCodeAt(j);var pn=3+3*i,cs='q 595 0 0 842 0 0 cm /Im0 Do Q';
+offs[pn]=len;push(pn+' 0 obj\n<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]/Resources<</XObject<</Im0 '+(pn+2)+' 0 R>>>>/Contents '+(pn+1)+' 0 R>>\nendobj\n');
+offs[pn+1]=len;push((pn+1)+' 0 obj\n<</Length '+cs.length+'>>\nstream\n'+cs+'\nendstream\nendobj\n');
+offs[pn+2]=len;push((pn+2)+' 0 obj\n<</Type/XObject/Subtype/Image/Width '+c.width+'/Height '+c.height+'/ColorSpace/DeviceRGB/BitsPerComponent 8/Filter/DCTDecode/Length '+u.length+'>>\nstream\n');push(u);push('\nendstream\nendobj\n')});
+var total=3+3*n,xr=len;push('xref\n0 '+total+'\n0000000000 65535 f \n');for(var i=1;i<total;i++)push(String(offs[i]).padStart(10,'0')+' 00000 n \n');
+push('trailer\n<</Size '+total+'/Root 1 0 R>>\nstartxref\n'+xr+'\n%%EOF');
+var out=new Uint8Array(len),p=0;parts.forEach(function(u){out.set(u,p);p+=u.length});return out}
+renderHome();
+})();
+</script></body></html>
